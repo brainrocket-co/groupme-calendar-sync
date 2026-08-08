@@ -19,11 +19,12 @@ function syncGroupMeToGoogleCalendar() {
     var config = getConfig_();
     var state = loadState_();
     var fetched = fetchGroupMeEvents_(config);
+    var memberDirectory = fetchGroupMeMemberDirectorySafely_(config);
     var seen = {};
     var stats = { fetched: fetched.events.length, created: 0, updated: 0, deleted: 0 };
 
     fetched.events.forEach(function (groupMeEvent) {
-      var normalized = normalizeGroupMeEvent_(groupMeEvent);
+      var normalized = normalizeGroupMeEvent_(groupMeEvent, memberDirectory);
       seen[normalized.groupMeEventId] = true;
       var googleEventId = state[normalized.groupMeEventId] && state[normalized.groupMeEventId].googleEventId;
       var result = upsertGoogleEvent_(config.calendarId, googleEventId, normalized);
@@ -127,6 +128,37 @@ function fetchGroupMeEventDetails_(config, eventId) {
   return parsed;
 }
 
+function fetchGroupMeMemberDirectorySafely_(config) {
+  try {
+    return fetchGroupMeMemberDirectory_(config);
+  } catch (error) {
+    console.warn('GroupMe member lookup failed; RSVP counts will be shown without names: ' + error);
+    return null;
+  }
+}
+
+function fetchGroupMeMemberDirectory_(config) {
+  var url = SETTINGS.GROUPME_BASE_URL + '/groups/' + encodeURIComponent(config.groupId);
+  var response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { 'X-Access-Token': config.token },
+    muteHttpExceptions: true
+  });
+  var status = response.getResponseCode();
+  var body = response.getContentText();
+  if (status < 200 || status >= 300) {
+    throw new Error('GroupMe group request failed (' + status + '): ' + redactToken_(body, config.token));
+  }
+  var parsed = JSON.parse(body);
+  var group = parsed.response || parsed;
+  var members = Array.isArray(group.members) ? group.members : [];
+  return members.reduce(function (directory, member) {
+    var id = String(member.user_id || member.id || '');
+    if (id) directory[id] = String(member.nickname || member.name || 'Unknown member');
+    return directory;
+  }, {});
+}
+
 function extractEvents_(payload) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload.events)) return payload.events;
@@ -134,7 +166,7 @@ function extractEvents_(payload) {
   throw new Error('Unexpected GroupMe events response shape.');
 }
 
-function normalizeGroupMeEvent_(event) {
+function normalizeGroupMeEvent_(event, memberDirectory) {
   var id = String(event.event_id || event.id || '');
   var title = String(event.name || '').trim();
   var start = event.start_at;
@@ -148,15 +180,79 @@ function normalizeGroupMeEvent_(event) {
   var normalized = {
     groupMeEventId: id,
     title: title,
-    description: String(event.description || ''),
+    description: buildGoogleDescription_(event, memberDirectory),
     location: String(location.address || location.name || ''),
     start: start,
     end: end,
     allDay: allDay,
-    timeZone: event.timezone || Session.getScriptTimeZone()
+    timeZone: event.timezone || Session.getScriptTimeZone(),
+    sourceUrl: String(event.share_url || 'https://groupme.com/')
   };
   normalized.fingerprint = fingerprint_(normalized);
   return normalized;
+}
+
+function buildGoogleDescription_(event, memberDirectory) {
+  var sections = [];
+  var originalDescription = String(event.description || '').trim();
+  if (originalDescription) sections.push(originalDescription);
+
+  var detailLines = buildEventDetailLines_(event.links || []);
+  if (detailLines.length) sections.push('EVENT DETAILS\n' + detailLines.join('\n'));
+
+  var rsvpLines = buildRsvpLines_(event, memberDirectory);
+  if (rsvpLines.length) sections.push('GROUPME RSVPs\n' + rsvpLines.join('\n'));
+
+  if (event.share_url) sections.push('RSVP or view updates in GroupMe:\n' + event.share_url);
+  return sections.join('\n\n');
+}
+
+function buildEventDetailLines_(links) {
+  var lines = [];
+  links.forEach(function (link) {
+    if (!link || !link.name) return;
+    if (link.type === 'dress_code') {
+      lines.push('Attire: ' + link.name);
+    } else if (link.type === 'info') {
+      lines.push('Additional info: ' + link.name);
+    } else if (link.type === 'link' && link.url) {
+      lines.push(link.name + ': ' + link.url);
+    }
+  });
+  return lines;
+}
+
+function buildRsvpLines_(event, memberDirectory) {
+  var going = stringIds_(event.going);
+  var maybe = stringIds_(event.maybe_going);
+  var notGoing = stringIds_(event.not_going);
+  var lines = [
+    formatRsvpLine_('Going', going, memberDirectory),
+    formatRsvpLine_('Maybe', maybe, memberDirectory),
+    formatRsvpLine_("Can't go", notGoing, memberDirectory)
+  ];
+
+  // Pending means active group members who have not selected any RSVP option.
+  // It can only be calculated when the member directory request succeeds.
+  if (memberDirectory) {
+    var answered = {};
+    going.concat(maybe, notGoing).forEach(function (id) { answered[id] = true; });
+    var pending = Object.keys(memberDirectory).filter(function (id) { return !answered[id]; });
+    lines.push(formatRsvpLine_('Pending', pending, memberDirectory));
+  }
+  return lines;
+}
+
+function formatRsvpLine_(label, ids, memberDirectory) {
+  var suffix = '';
+  if (ids.length && memberDirectory) {
+    suffix = ': ' + ids.map(function (id) { return memberDirectory[id] || 'Unknown member'; }).join(', ');
+  }
+  return label + ' (' + ids.length + ')' + suffix;
+}
+
+function stringIds_(value) {
+  return Array.isArray(value) ? value.map(function (id) { return String(id); }) : [];
 }
 
 function upsertGoogleEvent_(calendarId, googleEventId, event) {
@@ -179,7 +275,7 @@ function toGoogleEventResource_(event) {
     description: event.description,
     location: event.location,
     extendedProperties: { private: { groupmeEventId: event.groupMeEventId } },
-    source: { title: 'GroupMe event', url: 'https://groupme.com/' }
+    source: { title: 'GroupMe event', url: event.sourceUrl || 'https://groupme.com/' }
   };
   if (event.allDay) {
     resource.start = { date: String(event.start).slice(0, 10) };

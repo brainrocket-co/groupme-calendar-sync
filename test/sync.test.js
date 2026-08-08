@@ -35,13 +35,41 @@ test('normalizes a timed GroupMe event', () => {
   assert.equal(event.location, 'Band room');
 });
 
+test('builds an organized description with details and named RSVPs', () => {
+  const description = context.buildGoogleDescription_({
+    description: 'Dinner before rehearsal.',
+    links: [
+      { type: 'dress_code', name: 'Blue shirt' },
+      { type: 'info', name: 'Bring gloves' },
+      { type: 'link', name: 'Competition site', url: 'https://example.com' }
+    ],
+    going: ['1'],
+    maybe_going: ['2'],
+    not_going: [],
+    share_url: 'https://groupme.com/join_event/example'
+  }, { '1': 'Doug', '2': 'Pat', '3': 'Sam' });
+
+  assert.match(description, /Attire: Blue shirt/);
+  assert.match(description, /Competition site: https:\/\/example.com/);
+  assert.match(description, /Going \(1\): Doug/);
+  assert.match(description, /Maybe \(1\): Pat/);
+  assert.match(description, /Pending \(1\): Sam/);
+});
+
+test('falls back to RSVP counts if member lookup is unavailable', () => {
+  const lines = context.buildRsvpLines_({
+    going: ['1'], maybe_going: [], not_going: []
+  }, null);
+  assert.deepEqual(Array.from(lines), ['Going (1)', 'Maybe (0)', "Can't go (0)"]);
+});
+
 test('adds a stable private mapping to Google events', () => {
   const resource = context.toGoogleEventResource_({
     groupMeEventId: 'gm-1', title: 'Move props', description: '', location: '',
     start: '2026-08-10T18:00:00-04:00', end: '2026-08-10T19:00:00-04:00',
-    allDay: false, timeZone: 'America/New_York'
+    allDay: false, timeZone: 'America/New_York', sourceUrl: 'https://groupme.com/join_event/example'
   });
   assert.equal(resource.extendedProperties.private.groupmeEventId, 'gm-1');
   assert.equal(resource.start.dateTime, '2026-08-10T18:00:00-04:00');
+  assert.equal(resource.source.url, 'https://groupme.com/join_event/example');
 });
-

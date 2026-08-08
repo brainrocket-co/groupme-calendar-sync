@@ -2,6 +2,11 @@
 
 A small, one-way mirror for a GroupMe group's upcoming Events. GroupMe remains the place to create, edit, cancel, and RSVP; a dedicated Google Calendar makes those events visible in everyone's normal calendar apps.
 
+Mirrored descriptions include optional attire, custom information, web links,
+and an informational RSVP summary with GroupMe display names. The Google event
+links back to GroupMe for responding; it does not create Google attendees or
+send Google invitations.
+
 ## Minimal design
 
 ```text
@@ -98,6 +103,6 @@ Do not make contributors editors of the live Apps Script project unless they sho
 
 - Only upcoming events returned by GroupMe are mirrored; past events are left in Google Calendar.
 - The GroupMe endpoint is unsupported and may change.
-- The initial version does not mirror RSVPs because Google Calendar is intentionally display-only.
+- RSVPs are a periodic snapshot; changes appear after the next sync rather than instantly.
 - If GroupMe returns 100 events, deletion is skipped for that run to protect against an incomplete result set.
 - Restoring or replacing the Apps Script project loses its private event mapping; existing mirror events may then duplicate on the first run.
