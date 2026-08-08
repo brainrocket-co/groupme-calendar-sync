@@ -65,6 +65,15 @@ Use a temporary Google calendar and a GroupMe test event first.
 6. Delete the GroupMe event, run again, and confirm the mirrored event disappears.
 7. Review **Executions** and confirm the run completed successfully.
 
+### Inspect GroupMe's current event fields
+
+GroupMe's Events API is undocumented and its newer fields may change. To inspect
+one real event safely, run `inspectLatestGroupMeEventPayload` manually in Apps
+Script and open the execution log. It fetches the first upcoming event from both
+the list and event-details endpoints. The diagnostic output does not include the
+GroupMe token or Google Calendar ID, but it can include event text and member
+IDs, so review it before sharing it publicly.
+
 To test the pure conversion code locally (Node 18 or newer):
 
 ```sh
@@ -92,4 +101,3 @@ Do not make contributors editors of the live Apps Script project unless they sho
 - The initial version does not mirror RSVPs because Google Calendar is intentionally display-only.
 - If GroupMe returns 100 events, deletion is skipped for that run to protect against an incomplete result set.
 - Restoring or replacing the Apps Script project loses its private event mapping; existing mirror events may then duplicate on the first run.
-

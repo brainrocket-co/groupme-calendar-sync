@@ -80,6 +80,53 @@ function fetchGroupMeEvents_(config) {
   return { events: events, isComplete: events.length < SETTINGS.FETCH_LIMIT };
 }
 
+/**
+ * Diagnostic helper for discovering GroupMe's current, undocumented event
+ * fields. Run manually from the Apps Script editor, then inspect the log.
+ * The access token and Google Calendar ID are never included in the output.
+ */
+function inspectLatestGroupMeEventPayload() {
+  var config = getConfig_();
+  var fetched = fetchGroupMeEvents_(config);
+  if (!fetched.events.length) {
+    throw new Error('No upcoming GroupMe events were found.');
+  }
+
+  var listEvent = fetched.events[0];
+  var eventId = String(listEvent.event_id || listEvent.id || '');
+  if (!eventId) throw new Error('The first GroupMe event has no event ID.');
+
+  var details = fetchGroupMeEventDetails_(config, eventId);
+  var diagnostic = {
+    note: 'No GroupMe token or Google Calendar ID is included in this output.',
+    listEvent: listEvent,
+    eventDetails: details
+  };
+  console.log(JSON.stringify(diagnostic, null, 2));
+  return diagnostic;
+}
+
+function fetchGroupMeEventDetails_(config, eventId) {
+  var url = SETTINGS.GROUPME_BASE_URL + '/conversations/' +
+    encodeURIComponent(config.groupId) + '/events/show?event_id=' + encodeURIComponent(eventId);
+  var response = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { 'X-Access-Token': config.token },
+    muteHttpExceptions: true
+  });
+  var status = response.getResponseCode();
+  var body = response.getContentText();
+  if (status < 200 || status >= 300) {
+    throw new Error('GroupMe event-details request failed (' + status + '): ' +
+      redactToken_(body, config.token));
+  }
+  var parsed = JSON.parse(body);
+  if (parsed.event) return parsed.event;
+  if (parsed.response && parsed.response.event) return parsed.response.event;
+  if (parsed.response) return parsed.response;
+  return parsed;
+}
+
 function extractEvents_(payload) {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload.events)) return payload.events;
@@ -201,4 +248,3 @@ function redactToken_(text, token) {
 function isNotFound_(error) {
   return /\b404\b|not found/i.test(String(error && error.message || error));
 }
-
