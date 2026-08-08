@@ -1,0 +1,13 @@
+{
+  "name": "groupme-google-calendar-sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mirror GroupMe events to Google Calendar with Google Apps Script",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
+
