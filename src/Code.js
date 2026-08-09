@@ -21,12 +21,17 @@ function syncGroupMeToGoogleCalendar() {
     var fetched = fetchGroupMeEvents_(config);
     var memberDirectory = fetchGroupMeMemberDirectorySafely_(config);
     var seen = {};
-    var stats = { fetched: fetched.events.length, created: 0, updated: 0, deleted: 0 };
+    var stats = { fetched: fetched.events.length, created: 0, updated: 0, unchanged: 0, deleted: 0 };
 
     fetched.events.forEach(function (groupMeEvent) {
       var normalized = normalizeGroupMeEvent_(groupMeEvent, memberDirectory);
       seen[normalized.groupMeEventId] = true;
-      var googleEventId = state[normalized.groupMeEventId] && state[normalized.groupMeEventId].googleEventId;
+      var existing = state[normalized.groupMeEventId];
+      var googleEventId = existing && existing.googleEventId;
+      if (existing && googleEventId && existing.fingerprint === normalized.fingerprint) {
+        stats.unchanged += 1;
+        return;
+      }
       var result = upsertGoogleEvent_(config.calendarId, googleEventId, normalized);
       state[normalized.groupMeEventId] = {
         googleEventId: result.googleEventId,
@@ -197,40 +202,48 @@ function buildGoogleDescription_(event, memberDirectory) {
   var originalDescription = String(event.description || '').trim();
   if (originalDescription) sections.push(originalDescription);
 
-  var detailLines = buildEventDetailLines_(event.links || []);
-  if (detailLines.length) sections.push('EVENT DETAILS\n' + detailLines.join('\n'));
-
   var rsvpLines = buildRsvpLines_(event, memberDirectory);
+  if (event.share_url) {
+    rsvpLines.push('', 'RSVP or view updates in GroupMe:', event.share_url);
+  }
   if (rsvpLines.length) sections.push('GROUPME RSVPs\n' + rsvpLines.join('\n'));
 
-  if (event.share_url) sections.push('RSVP or view updates in GroupMe:\n' + event.share_url);
+  var detailLines = buildEventDetailLines_(event.links || []);
+  if (detailLines.length) sections.push('EVENT DETAILS\n' + detailLines.join('\n\n'));
   return sections.join('\n\n');
 }
 
 function buildEventDetailLines_(links) {
   var lines = [];
   links.forEach(function (link) {
-    if (!link || !link.name) return;
-    if (link.type === 'dress_code') {
-      lines.push('Attire: ' + link.name);
-    } else if (link.type === 'info') {
-      lines.push('Additional info: ' + link.name);
-    } else if (link.type === 'link' && link.url) {
-      lines.push(link.name + ': ' + link.url);
-    }
+    if (!link || (!link.name && !link.url)) return;
+    var label = toTitleCase_(link.type || 'detail');
+    var line = label + (link.name ? ': ' + link.name : '');
+    if (link.url) line += '\n' + link.url;
+    lines.push(line);
   });
   return lines;
+}
+
+function toTitleCase_(value) {
+  return String(value)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, function (character) { return character.toUpperCase(); });
 }
 
 function buildRsvpLines_(event, memberDirectory) {
   var going = stringIds_(event.going);
   var maybe = stringIds_(event.maybe_going);
   var notGoing = stringIds_(event.not_going);
-  var lines = [
+  var lines = [];
+  if (event.capacity !== null && event.capacity !== undefined && event.capacity !== '') {
+    lines.push('Needed (' + event.capacity + ')');
+  }
+  lines = lines.concat([
     formatRsvpLine_('Going', going, memberDirectory),
     formatRsvpLine_('Maybe', maybe, memberDirectory),
     formatRsvpLine_("Can't go", notGoing, memberDirectory)
-  ];
+  ]);
 
   // Pending means active group members who have not selected any RSVP option.
   // It can only be calculated when the member directory request succeeds.
@@ -238,7 +251,7 @@ function buildRsvpLines_(event, memberDirectory) {
     var answered = {};
     going.concat(maybe, notGoing).forEach(function (id) { answered[id] = true; });
     var pending = Object.keys(memberDirectory).filter(function (id) { return !answered[id]; });
-    lines.push(formatRsvpLine_('Pending', pending, memberDirectory));
+    lines.push(formatRsvpLine_('Pending', pending, null));
   }
   return lines;
 }

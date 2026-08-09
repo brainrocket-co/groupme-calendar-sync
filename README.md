@@ -2,10 +2,11 @@
 
 A small, one-way mirror for a GroupMe group's upcoming Events. GroupMe remains the place to create, edit, cancel, and RSVP; a dedicated Google Calendar makes those events visible in everyone's normal calendar apps.
 
-Mirrored descriptions include optional attire, custom information, web links,
+Mirrored descriptions include GroupMe's optional event-detail links, capacity,
 and an informational RSVP summary with GroupMe display names. The Google event
 links back to GroupMe for responding; it does not create Google attendees or
-send Google invitations.
+send Google invitations. Unknown future event-detail types are displayed rather
+than discarded.
 
 ## Minimal design
 
@@ -89,15 +90,21 @@ npm test
 
 Run `createSyncTrigger` once in Apps Script and approve access. It removes any duplicate sync triggers and creates one that runs every 10 minutes. The trigger runs as the Google account that created it, so that account must retain write access to the calendar.
 
+Ten minutes is the recommended interval for this project: it keeps RSVP and
+schedule changes reasonably fresh while remaining tiny compared with Apps
+Script's normal quotas. Unchanged events are skipped, so frequent polling does
+not repeatedly rewrite Google Calendar events.
+
 To stop automatic syncing, run `deleteSyncTriggers`.
 
-## GitHub versioning and sharing
+## Optional local deployment with clasp
 
-Create an empty GitHub repository, then commit this project. The `.gitignore` excludes `.clasp.json`, `.env`, and common local files. Before every push, verify that the GroupMe token is present only in Apps Script Properties.
-
-For later local deployments, install Google's `clasp`, copy `.clasp.json.example` to `.clasp.json`, enter the Apps Script project ID, sign in, and use `clasp push`. The local `.clasp.json` is deliberately ignored because it is machine/project-specific.
-
-Do not make contributors editors of the live Apps Script project unless they should also be trusted with its Script Properties. For public sharing, share only the GitHub source and let each user create their own Apps Script project and credentials.
+This repository is already hosted at
+[`brainrocket-co/groupme-calendar-sync`](https://github.com/brainrocket-co/groupme-calendar-sync).
+To deploy from a local checkout, install Google's `clasp`, copy
+`.clasp.json.example` to `.clasp.json`, enter the Apps Script project ID, sign
+in, and use `clasp push`. The project-specific `.clasp.json` is deliberately
+ignored. Never commit the GroupMe token or other Script Properties.
 
 ## Current limitations
 

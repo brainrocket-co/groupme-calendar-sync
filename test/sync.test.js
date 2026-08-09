@@ -43,17 +43,33 @@ test('builds an organized description with details and named RSVPs', () => {
       { type: 'info', name: 'Bring gloves' },
       { type: 'link', name: 'Competition site', url: 'https://example.com' }
     ],
+    capacity: 4,
     going: ['1'],
     maybe_going: ['2'],
     not_going: [],
     share_url: 'https://groupme.com/join_event/example'
   }, { '1': 'Doug', '2': 'Pat', '3': 'Sam' });
 
-  assert.match(description, /Attire: Blue shirt/);
-  assert.match(description, /Competition site: https:\/\/example.com/);
+  assert.match(description, /Dress Code: Blue shirt/);
+  assert.match(description, /Link: Competition site\nhttps:\/\/example.com/);
+  assert.match(description, /Needed \(4\)/);
   assert.match(description, /Going \(1\): Doug/);
   assert.match(description, /Maybe \(1\): Pat/);
-  assert.match(description, /Pending \(1\): Sam/);
+  assert.match(description, /Pending \(1\)(?!:)/);
+  assert.ok(description.indexOf('GROUPME RSVPs') < description.indexOf('EVENT DETAILS'));
+});
+
+test('renders future link types generically with optional URLs', () => {
+  const lines = context.buildEventDetailLines_([
+    { type: 'payment', name: '$10 due', url: 'https://example.com/pay' },
+    { type: 'restrictions', name: 'Adults only' },
+    { type: 'future_link_type', name: 'Still works' }
+  ]);
+  assert.deepEqual(Array.from(lines), [
+    'Payment: $10 due\nhttps://example.com/pay',
+    'Restrictions: Adults only',
+    'Future Link Type: Still works'
+  ]);
 });
 
 test('falls back to RSVP counts if member lookup is unavailable', () => {
